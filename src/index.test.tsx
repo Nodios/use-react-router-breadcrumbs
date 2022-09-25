@@ -4,7 +4,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter as Router, useLocation } from 'react-router-dom';
-import useBreadcrumbs, { getBreadcrumbs, createRoutesFromChildren, BreadcrumbsRoute, Route, Options, BreadcrumbComponentProps } from './index';
+import useBreadcrumbs, { getBreadcrumbs, createRoutesFromChildren, BreadcrumbsRoute, Route, Options, BreadcrumbComponentProps, BreadcrumbsRouteObjectType } from './index';
 
 // imports to test compiled builds
 import useBreadcrumbsCompiledES, {
@@ -29,13 +29,15 @@ const components = {
     useBreadcrumbs: useBreadcrumbsHook,
     options,
     routes,
+    routeObjects,
     ...forwardedProps
   }: {
-    useBreadcrumbs: (r?: BreadcrumbsRoute[], o?: Options) => []
+    useBreadcrumbs: (r?: BreadcrumbsRoute[], ro?: BreadcrumbsRouteObjectType, o?: Options) => []
     options?: Options
-    routes?: BreadcrumbsRoute[]
+    routes?: BreadcrumbsRoute[],
+    routeObjects?: BreadcrumbsRouteObjectType,
   }) => {
-    const breadcrumbs = useBreadcrumbsHook(routes, options);
+    const breadcrumbs = useBreadcrumbsHook(routes, routeObjects, options);
     const location = useLocation();
 
     return (
@@ -127,11 +129,12 @@ const getMethod = () => {
 };
 
 const renderer = (
-  { options, pathname, routes, state, props }:
+  { options, pathname, routes, routeObjects, state, props }:
   {
     options?: Options
     pathname: string
     routes?: BreadcrumbsRoute<string>[]
+    routeObjects?: BreadcrumbsRouteObjectType
     state?: { isLocationTest: boolean }
     props?: { [x: string]: unknown }
   },
@@ -147,6 +150,7 @@ const renderer = (
         useBreadcrumbs={useBreadcrumbsHook}
         options={options}
         routes={routes}
+        routeObjects={routeObjects}
         {...(props || {})}
       />
     </Router>,
@@ -590,6 +594,62 @@ describe('use-react-router-breadcrumbs', () => {
     it('Should handle 2 slashes in a URL (site.com/sandwiches//tuna)', () => {
       renderer({ pathname: '/sandwiches//tuna' });
       expect(getByTextContent('Home / Sandwiches / Tuna')).toBeTruthy();
+    });
+  });
+
+  describe('Using route objects', () => {
+    it('Detect route object routes', () => {
+      const routes = [
+        { path: 'a/*' },
+      ];
+
+      renderer({
+        pathname: '/a/b',
+        routes,
+        routeObjects: {
+          a: [
+            {
+              path: 'b',
+            },
+          ],
+        },
+      });
+
+      expect(getByTextContent('Home / A / B')).toBeTruthy();
+    });
+
+    it('Use custom breadcrumb from route object', () => {
+      const routes: BreadcrumbsRoute[] = [
+        { path: 'a/*', breadcrumb: 'Route A' },
+      ];
+
+      renderer({
+        pathname: '/a/b',
+        routes,
+        routeObjects: {
+          a: [
+            {
+              path: 'b',
+              breadcrumb: 'Route B',
+            },
+          ],
+        },
+      });
+
+      expect(getByTextContent('Home / Route A / Route B')).toBeTruthy();
+    });
+
+    it('No route object passed', () => {
+      const routes = [
+        { path: 'a/*' },
+      ];
+
+      renderer({
+        pathname: '/a/b',
+        routes,
+      });
+
+      expect(getByTextContent('Home / A / B')).toBeTruthy();
     });
   });
 });

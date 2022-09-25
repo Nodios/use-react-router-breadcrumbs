@@ -43,7 +43,7 @@ interface PathPattern<Path extends string = string> {
 export interface Options {
   disableDefaults?: boolean;
   excludePaths?: string[];
-  defaultFormatter?: (str: string) => string
+  defaultFormatter?: (str: string) => string;
 }
 
 export interface BreadcrumbMatch<ParamKey extends string = string> {
@@ -74,6 +74,8 @@ export interface BreadcrumbComponentProps<ParamKey extends string = string> {
 
 export type BreadcrumbComponentType<ParamKey extends string = string> =
   React.ComponentType<BreadcrumbComponentProps<ParamKey>>;
+
+export type BreadcrumbsRouteObjectType = { [path: string]: BreadcrumbsRoute[] };
 
 export interface BreadcrumbsRoute<ParamKey extends string = string>
   extends RouteObject {
@@ -143,6 +145,7 @@ function compareIndexes(a: number[], b: number[]): number {
 
 function flattenRoutes(
   routes: BreadcrumbsRoute[],
+  routeObjects: BreadcrumbsRouteObjectType = {},
   branches: BreadcrumbsRouteBranch[] = [],
   parentsMeta: BreadcrumbsRouteMeta[] = [],
   parentPath = '',
@@ -173,14 +176,22 @@ function flattenRoutes(
       meta.relativePath = meta.relativePath.slice(parentPath.length);
     }
 
-    const path = joinPaths([parentPath, meta.relativePath]);
+    let path = joinPaths([parentPath, meta.relativePath]);
     const routesMeta = parentsMeta.concat(meta);
+    const potentialRouteObject = meta.relativePath.endsWith('/*');
 
     if (route.children && route.children.length > 0) {
       if (route.index) {
         throw new Error('useBreadcrumbs: Index route cannot have child routes');
       }
-      flattenRoutes(route.children, branches, routesMeta, path);
+      flattenRoutes(route.children, routeObjects, branches, routesMeta, path);
+    } else if (potentialRouteObject) {
+      const pathElement = meta.relativePath.slice(0, -2); // remove "/*"" from the end
+      if (routeObjects[pathElement]) {
+        const routeObjectRoutes = routeObjects[pathElement];
+        path = joinPaths([parentPath, pathElement]);
+        flattenRoutes(routeObjectRoutes, routeObjects, branches, routesMeta, path);
+      }
     }
 
     branches.push({
@@ -361,7 +372,7 @@ const getBreadcrumbMatch = ({
         // which we support. The route config object may not have a `breadcrumb` param specified.
         // If this is the case, we should provide a default via `humanize`.
         breadcrumb: userProvidedBreadcrumb
-        || (defaultFormatter ? defaultFormatter(currentSection) : humanize(currentSection)),
+          || (defaultFormatter ? defaultFormatter(currentSection) : humanize(currentSection)),
         match: { ...match, route },
         location,
         props,
@@ -397,16 +408,18 @@ const getBreadcrumbMatch = ({
  */
 export const getBreadcrumbs = ({
   routes,
+  routeObjects,
   location,
   options = {},
 }: {
   routes: BreadcrumbsRoute[];
   location: Location;
+  routeObjects?: BreadcrumbsRouteObjectType
   options?: Options;
 }): BreadcrumbData[] => {
   const { pathname } = location;
 
-  const branches = rankRouteBranches(flattenRoutes(routes));
+  const branches = rankRouteBranches(flattenRoutes(routes, routeObjects));
   const breadcrumbs: BreadcrumbData[] = [];
   pathname
     .split('?')[0]
@@ -453,9 +466,11 @@ export const getBreadcrumbs = ({
  */
 const useReactRouterBreadcrumbs = (
   routes?: BreadcrumbsRoute[],
+  routeObjects?: BreadcrumbsRouteObjectType,
   options?: Options,
 ): BreadcrumbData[] => getBreadcrumbs({
   routes: routes || [],
+  routeObjects,
   location: useLocation(),
   options,
 });
@@ -502,8 +517,7 @@ export function createRoutesFromChildren(
 
     invariant(
       element.type === Route,
-      `[${
-        typeof element.type === 'string' ? element.type : element.type.name
+      `[${typeof element.type === 'string' ? element.type : element.type.name
       }] is not a <Route> component. All component children of <Routes> must be a <Route> or <React.Fragment>`,
     );
 
